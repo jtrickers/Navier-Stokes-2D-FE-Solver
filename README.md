@@ -40,6 +40,12 @@ To visualize the velocity field:
 
 4. Run the cells that plot the results. The notebook extracts the topological node data and renders the $2D$ flow using matplotlib.pyplot.quiver.
 
+## Example Output
+
+Below is an example plot resulting from running the code in a Jupyter notebook:
+
+![example plot](example.png)
+
 ## Documentation Notes
 
 For an in-depth look at how specific PETSc C functions were mapped to Python--including workarounds for `PETSc.FE().createDefault`, `PETSc.TS().create()`, and `PETSc.DMPlex.createBoxMesh()`--please refer to the markdown files in `docs/`.
