@@ -37,3 +37,25 @@ This function defines the mathematical "Space" that the physics live in. For the
 ### Returns
 
 - **self**
+
+### Python Example
+
+```
+# Create a 2D Quadratic Field for Velocity
+dim = 2
+components = 2  # (u, v)
+q_order = 3     # Quadrature order (usually degree + 1)
+
+fe_vel = PETSc.FE().createDefault(
+    dim, 
+    components, 
+    False,      # isSimplex (matches createBoxMesh)
+    q_order, 
+    "vel_",     # Options prefix
+    None        # Communicator
+)
+```
+
+### Illustrative Example
+
+...

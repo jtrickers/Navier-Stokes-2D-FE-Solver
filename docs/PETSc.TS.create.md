@@ -19,3 +19,22 @@ The TS (timestepper) object is the top-level solver for Ordinary Differential Eq
 ### Returns
 
 - **self**
+
+### Python Example
+
+```
+ts = PETSc.TS().create(PETSc.COMM_WORLD)
+ts.setDM(dm)                         # Associate the mesh
+ts.setProblemType(ts.ProblemType.NONLINEAR)
+ts.setEquationType(ts.EquationType.IMPLICIT) # NS is usually implicit
+
+# Setup time-stepping parameters
+ts.setTime(0.0)
+ts.setTimeStep(0.01)
+ts.setMaxSteps(10)
+ts.setExactFinalTime(ts.ExactFinalTime.STEPOVER)
+```
+
+### Illustrative Example
+
+...
