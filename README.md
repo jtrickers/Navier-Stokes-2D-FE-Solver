@@ -48,7 +48,7 @@ Below is an example plot resulting from running the code in a Jupyter notebook:
 
 ## Documentation Notes
 
-For an in-depth look at how specific PETSc C functions were mapped to Python--including workarounds for `PETSc.FE().createDefault`, `PETSc.TS().create()`, and `PETSc.DMPlex.createBoxMesh()`--please refer to the markdown files in `docs/`.
+For an in-depth look at how specific PETSc C functions were mapped to Python--including workarounds for `PETSc.FE().createDefault`, `PETSc.TS().create()`, and `PETSc.DMPlex.createBoxMesh()`--please refer to the docstrings in `src/tutorial_module.py`. The sources and information below were used to compile descriptions for these functions.
 
 ## PETSc.TS().create()
 
@@ -82,6 +82,12 @@ Source code at petsc4py/PETSc/TS.pyx:220
 
 ### [C Source (GitLab)](https://petsc.org/main/manualpages/TS/TSCreate/)
 
+### Illustrative Example
+
+Configuring an adaptive solver that automatically adjusts the time-step (Δt) based on the simulation's stability.
+
+In a practical simulation, we might use an "Adaptive" scheme to allow the TS object to act like a smart cruise control. If a fluid is moving slowly and smoothly, the TS language allows the solver to take larger "leaps" in time (dt=0.1). If the fluid suddenly becomes turbulent or hits a wall, the TS object detects the increase in the residual error and automatically "downshifts" to a tiny time-step (dt=0.001). This ensures the simulation doesn't "explode" numerically while maintaining the fastest possible execution speed.
+
 ## PETSc.FE().createDefault()
 
 ### [petsc4py Reference](https://petsc.org/main/petsc4py/reference/petsc4py.PETSc.FE.html#petsc4py.PETSc.FE.createDefault)
@@ -105,6 +111,12 @@ Self
 See also
 PetscFECreateDefault
 Source code at petsc4py/PETSc/FE.pyx:76
+
+### Illustrative Example
+
+Verifying the "Layout" of a Taylor-Hood element to ensure the solver knows where the variables are located.
+
+Consider the velocity field. By passing nc=2 (for u and v) and a polynomial degree of 2, createDefault creates a "Dual Space." In practical terms, this tells the computer: "For every square in my mesh, I need to track the velocity at 9 distinct points—the 4 corners, the 4 mid-points of the edges, and the 1 center point." By contrast, the pressure space is only told to track data at the 4 corners. This linguistic distinction between the two fields is what makes the simulation physically stable.
 
 ## PETSc.DMPlex().createBoxMesh()
 
@@ -143,3 +155,47 @@ Source code at petsc4py/PETSc/DMPlex.pyx:90
         CHKERR( DMPlexCreate(ccomm, &newdm) )
         PetscCLEAR(self.obj); self.dm = newdm
         return self
+
+### Illustrative Example
+
+Creating a non-unit "Pipe" domain (a rectangle) with specific boundary markers to simulate channel flow.
+
+Imagine we are simulating a standard channel flow. We initialize a 2.0×0.5 domain. By setting faces=[20, 5], we can create a grid of 100 quadrilaterals and generate a complex topological graph. In our Python code, we can use this and connected methods to define boundary conditions (such as the fixed velocity of the fluid entering the pipe). The mesh is thus not just a shape, but a labeled database of geometric entities.
+
+### Notes
+
+Here is the numbering returned for 2 faces in each direction for tensor cells:
+
+```
+ 10---17---11---18----12
+  |         |         |
+  |         |         |
+ 20    2   22    3    24
+  |         |         |
+  |         |         |
+  7---15----8---16----9
+  |         |         |
+  |         |         |
+ 19    0   21    1   23
+  |         |         |
+  |         |         |
+  4---13----5---14----6
+  ```
+
+  and for simplicial cells:
+
+  ```
+   14----8---15----9----16
+  |\     5  |\      7 |
+  | \       | \       |
+ 13   2    14    3    15
+  | 4   \   | 6   \   |
+  |       \ |       \ |
+ 11----6---12----7----13
+  |\        |\        |
+  | \    1  | \     3 |
+ 10   0    11    1    12
+  | 0   \   | 2   \   |
+  |       \ |       \ |
+  8----4----9----5----10
+  ```
