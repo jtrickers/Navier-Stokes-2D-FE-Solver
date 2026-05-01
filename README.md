@@ -6,6 +6,13 @@ This repository contains the final project for MA 402. The objective of this pro
 
 "Time dependent Navier-Stokes problem in 2d and 3d with finite elements. We solve the Navier-Stokes in a rectangular domain, using a parallel unstructured mesh (DMPLEX) to discretize it. This example supports discretized auxiliary fields (Re) as well as multilevel nonlinear solvers."
 
+The time-dependent incompressible Navier-Stokes equations can be written as:
+
+$\begin{aligned}
+\frac{\partial u}{\partial t} + u \cdot \nabla u - \nabla \cdot (\mu (\nabla u + \nabla u^T)) + \nabla p + f &= 0 \\
+\nabla \cdot u &= 0
+\end{aligned}$
+
 ## Notes on AI Translation
 
 Initial conversion of the PETSc C code to Python was done using Google Gemini, which initially produced frustrating and inoperable results. Switching to Gemini's Pro model proved effective, and the code it supplied, with a handful of bug fixes, streamlined the solving process with workarounds in Python.
