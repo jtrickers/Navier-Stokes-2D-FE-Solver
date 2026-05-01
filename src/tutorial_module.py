@@ -5,12 +5,23 @@ from petsc4py import PETSc
 import numpy as np
 
 class NavierStokesSolver:
-    def __init__(self, reynolds=400.0, n_cells=4, domain_size=1.0):
+    def __init__(self, reynolds=400.0, n_cells=4, vel_degree=2, pres_degree=1,
+                 exact_u=None, exact_v=None, exact_p=None):
         self.re = reynolds
         self.n = n_cells
         self.L = domain_size
         self.dm = None
         self.ts = None
+
+        # Element polynomial degrees
+        self.vel_degree = vel_degree
+        self.pres_degree = pres_degree
+        
+        # Flow conditions / MMS exact functions
+        # If none are provided, it defaults to the standard Q2-Q1 MMS test case
+        self.exact_u = exact_u if exact_u else lambda t, x, y: t + x**2 + y**2
+        self.exact_v = exact_v if exact_v else lambda t, x, y: t + 2.0*x**2 - 2.0*x*y
+        self.exact_p = exact_p if exact_p else lambda t, x, y: x + y - 1.0
 
     def create_mesh(self):
         # Ensure we interpolate so edges are created
@@ -90,8 +101,8 @@ class NavierStokesSolver:
         dim = int(self.dm.getDimension())
 
         opts = PETSc.Options()
-        opts.setValue("vel_petscspace_degree", 2)
-        opts.setValue("pres_petscspace_degree", 1)
+        opts.setValue("vel_petscspace_degree", self.vel_degree)
+        opts.setValue("pres_petscspace_degree", self.pres_degree)
 
         # Q2-Q1 Taylor-Hood
         fe_vel = PETSc.FE().createDefault(dim, dim, False, 3, "vel_", None)
@@ -202,10 +213,10 @@ class NavierStokesSolver:
             
             # Projecting the algebraic constraint to verify mapping logic
             if dof >= 2: # Vel
-                f_glob[off]   = u_glob[off]   - (t + x**2 + y**2)
-                f_glob[off+1] = u_glob[off+1] - (t + 2.0*x**2 - 2.0*x*y)
+                f_glob[off]   = u_glob[off]   - self.exact_u(t, x, y)
+                f_glob[off+1] = u_glob[off+1] - self.exact_v(t, x, y)
             if dof == 3: # Pres
-                f_glob[off+2] = u_glob[off+2] - (x + y - 1.0)
+                f_glob[off+2] = u_glob[off+2] - self.exact_p(t, x, y)
 
     def compute_exact(self, t, Vec_U):
         u_arr = Vec_U.getArray()
@@ -222,10 +233,10 @@ class NavierStokesSolver:
             x, y = self._get_true_coords(pt, coord_sec, coords_arr)
             
             if dof >= 2:
-                u_arr[off]   = t + x**2 + y**2
-                u_arr[off+1] = t + 2.0*x**2 - 2.0*x*y
+                u_arr[off]   = self.exact_u(t, x, y)
+                u_arr[off+1] = self.exact_v(t, x, y)
             if dof == 3:
-                u_arr[off+2] = x + y - 1.0
+                u_arr[off+2] = self.exact_p(t, x, y)
 
     def solve(self):
         self.ts = PETSc.TS().create(PETSc.COMM_WORLD)

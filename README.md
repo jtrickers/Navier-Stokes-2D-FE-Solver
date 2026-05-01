@@ -13,6 +13,8 @@ $\begin{aligned}
 \nabla \cdot u &= 0
 \end{aligned}$
 
+The velocities in this model are unsteady and push out from the origin. One of the default terms in the velocity creates a shearing flow designed to warp and twist the flow. The pressure is modeled as a linear distribution ramped up across the mesh. By default, the pressure gradient is what forces the simulated fluid across the mesh.
+
 ## Notes on AI Translation
 
 Initial conversion of the PETSc C code to Python was done using Google Gemini, which initially produced frustrating and inoperable results. Switching to Gemini's Pro model proved effective, and the code it supplied, with a handful of bug fixes, streamlined the solving process with workarounds in Python.
