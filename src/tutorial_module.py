@@ -5,15 +5,17 @@ from petsc4py import PETSc
 import numpy as np
 
 class NavierStokesSolver:
-    def __init__(self, reynolds=400.0):
+    def __init__(self, reynolds=400.0, n_cells=4, domain_size=1.0):
         self.re = reynolds
+        self.n = n_cells
+        self.L = domain_size
         self.dm = None
         self.ts = None
 
     def create_mesh(self):
         # Ensure we interpolate so edges are created
         self.dm = PETSc.DMPlex().createBoxMesh(
-            faces=[4, 4], lower=[0, 0], upper=[1, 1], 
+            faces=[self.n, self.n], lower=[0, 0], upper=[self.L, self.L], 
             simplex=False, interpolate=True
         )
         """
@@ -86,6 +88,11 @@ class NavierStokesSolver:
 
     def setup_discretization(self):
         dim = int(self.dm.getDimension())
+
+        opts = PETSc.Options()
+        opts.setValue("vel_petscspace_degree", 2)
+        opts.setValue("pres_petscspace_degree", 1)
+
         # Q2-Q1 Taylor-Hood
         fe_vel = PETSc.FE().createDefault(dim, dim, False, 3, "vel_", None)
         fe_pres = PETSc.FE().createDefault(dim, 1, False, 3, "pres_", None)
@@ -151,6 +158,10 @@ class NavierStokesSolver:
         self.dm.setField(0, fe_vel)
         self.dm.setField(1, fe_pres)
         self.dm.createDS()
+
+        cdm = self.dm.getCoordinateDM()
+        cdm.setField(0, fe_vel)
+        cdm.createDS()
 
     def _get_true_coords(self, pt, coord_sec, coords_array):
         """Calculates midpoints for edges/faces since they lack direct coordinates."""
