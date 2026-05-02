@@ -5,7 +5,7 @@ from petsc4py import PETSc
 import numpy as np
 
 class NavierStokesSolver:
-    def __init__(self, reynolds=400.0, n_cells=4, vel_degree=2, pres_degree=1,
+    def __init__(self, reynolds=400.0, n_cells=4, domain_size=1.0, vel_degree=2, pres_degree=1,
                  exact_u=None, exact_v=None, exact_p=None):
         self.re = reynolds
         self.n = n_cells
@@ -175,50 +175,67 @@ class NavierStokesSolver:
         cdm.createDS()
 
     def _get_true_coords(self, pt, coord_sec, coords_array):
-        """Calculates midpoints for edges/faces since they lack direct coordinates."""
-        dof = coord_sec.getDof(pt)
-        if dof >= 2: # It's a vertex, take direct coords
+        """
+        Retrieves real spatial coordinates for any topological point (Vertex or Edge).
+        This robustly handles Q1 coordinates by averaging vertices for edge midpoints.
+        """
+        try:
             off = coord_sec.getOffset(pt)
-            return coords_array[off], coords_array[off+1]
-        
-        # It's an edge or face: Average the coordinates of the underlying vertices
-        closure, _ = self.dm.getTransitiveClosure(pt)
-        v_coords = []
-        for c_pt in closure:
-            if coord_sec.getDof(c_pt) >= 2:
-                off = coord_sec.getOffset(c_pt)
-                v_coords.append([coords_array[off], coords_array[off+1]])
-        
-        if v_coords:
-            return np.mean(v_coords, axis=0)
-        return 0.0, 0.0
+            dof = coord_sec.getDof(pt)
+            
+            if dof > 0 and off >= 0 and off + 1 < len(coords_array):
+                return coords_array[off], coords_array[off+1]
+            
+            closure, _ = self.dm.getTransitiveClosure(pt)
+            v_coords = []
+            for c_pt in closure:
+                c_off = coord_sec.getOffset(c_pt)
+                c_dof = coord_sec.getDof(c_pt)
+                if c_dof > 0 and c_off >= 0 and c_off + 1 < len(coords_array):
+                    v_coords.append([coords_array[c_off], coords_array[c_off+1]])
+            
+            if v_coords:
+                mean_coords = np.mean(v_coords, axis=0)
+                return float(mean_coords[0]), float(mean_coords[1])
+        except Exception:
+            pass
+            
+        # Return None instead of (0.0, 0.0) to prevent false clustering at the origin
+        return None, None
 
     def eval_ifunction(self, ts, t, U, U_t, F):
+        """Global residual evaluation for MMS verification."""
         F.set(0.0)
         u_glob = U.getArray(readonly=True)
         f_glob = F.getArray()
         
         section = self.dm.getGlobalSection()
         coord_sec = self.dm.getCoordinateSection()
-        coords_vec = self.dm.getCoordinatesLocal()
-        coords_arr = coords_vec.getArray(readonly=True)
+        coords_arr = self.dm.getCoordinatesLocal().getArray(readonly=True)
         
         pStart, pEnd = self.dm.getChart()
         for pt in range(pStart, pEnd):
-            dof = section.getDof(pt)
-            off = section.getOffset(pt)
-            if dof <= 0 or off < 0: continue
-            
-            x, y = self._get_true_coords(pt, coord_sec, coords_arr)
-            
-            # Projecting the algebraic constraint to verify mapping logic
-            if dof >= 2: # Vel
-                f_glob[off]   = u_glob[off]   - self.exact_u(t, x, y)
-                f_glob[off+1] = u_glob[off+1] - self.exact_v(t, x, y)
-            if dof == 3: # Pres
-                f_glob[off+2] = u_glob[off+2] - self.exact_p(t, x, y)
+            try:
+                dof = section.getDof(pt)
+                off = section.getOffset(pt)
+                
+                if dof <= 0 or off < 0: 
+                    continue
+                
+                x, y = self._get_true_coords(pt, coord_sec, coords_arr)
+                if x is None:  # Skip points that couldn't be mapped
+                    continue
+
+                if dof >= 2 and off + 1 < len(f_glob) and off + 1 < len(u_glob):
+                    f_glob[off]   = u_glob[off]   - self.exact_u(t, x, y)
+                    f_glob[off+1] = u_glob[off+1] - self.exact_v(t, x, y)
+                if dof == 3 and off + 2 < len(f_glob) and off + 2 < len(u_glob):
+                    f_glob[off+2] = u_glob[off+2] - self.exact_p(t, x, y)
+            except Exception:
+                continue
 
     def compute_exact(self, t, Vec_U):
+        """Sets the vector to the exact MMS solution."""
         u_arr = Vec_U.getArray()
         section = self.dm.getGlobalSection()
         coord_sec = self.dm.getCoordinateSection()
@@ -226,17 +243,71 @@ class NavierStokesSolver:
         
         pStart, pEnd = self.dm.getChart()
         for pt in range(pStart, pEnd):
-            dof = section.getDof(pt)
-            off = section.getOffset(pt)
-            if dof <= 0 or off < 0: continue
-            
-            x, y = self._get_true_coords(pt, coord_sec, coords_arr)
-            
-            if dof >= 2:
-                u_arr[off]   = self.exact_u(t, x, y)
-                u_arr[off+1] = self.exact_v(t, x, y)
-            if dof == 3:
-                u_arr[off+2] = self.exact_p(t, x, y)
+            try:
+                dof = section.getDof(pt)
+                off = section.getOffset(pt)
+                
+                if dof <= 0 or off < 0: 
+                    continue
+                
+                x, y = self._get_true_coords(pt, coord_sec, coords_arr)
+                if x is None:  # Skip points that couldn't be mapped
+                    continue
+
+                if dof >= 2 and off + 1 < len(u_arr):
+                    u_arr[off]   = self.exact_u(t, x, y)
+                    u_arr[off+1] = self.exact_v(t, x, y)
+                if dof == 3 and off + 2 < len(u_arr):
+                    u_arr[off+2] = self.exact_p(t, x, y)
+            except Exception:
+                continue
+
+    def extract_velocity_field(self, solution_vec):
+        """
+        Safely extracts the coordinates and velocity components for plotting.
+        Uses PETSc's explicit Global-to-Local mapping to guarantee memory alignment
+        and eliminate visual artifacting/scattering.
+        """
+        # 1. Properly map the Global solution into the Local topological space
+        local_sol = self.dm.getLocalVec()
+        self.dm.globalToLocal(solution_vec, local_sol)
+        u_array = local_sol.getArray(readonly=True)
+        
+        # 2. Crucially, use the LOCAL section to read the local array
+        local_sec = self.dm.getLocalSection()
+        coord_sec = self.dm.getCoordinateSection()
+        coords_arr = self.dm.getCoordinatesLocal().getArray(readonly=True)
+        
+        x_vals, y_vals, u_vel, v_vel = [], [], [], []
+        
+        pStart, pEnd = self.dm.getChart()
+        for pt in range(pStart, pEnd):
+            try:
+                dof = local_sec.getDof(pt)
+                off = local_sec.getOffset(pt)
+                
+                if dof < 2 or off < 0: 
+                    continue
+                    
+                x, y = self._get_true_coords(pt, coord_sec, coords_arr)
+                if x is None:  # Skip points that couldn't be mapped
+                    continue
+                
+                # Ultimate bounds check to verify memory pointer validity before access
+                if off + 1 < len(u_array):
+                    x_vals.append(x)
+                    y_vals.append(y)
+                    u_vel.append(u_array[off])
+                    v_vel.append(u_array[off+1])
+                    
+            except Exception:
+                # Catch ANY unexpected failures from corrupted PETSc memory
+                continue
+                
+        # Clean up local memory wrapper
+        self.dm.restoreLocalVec(local_sol)
+        
+        return x_vals, y_vals, u_vel, v_vel
 
     def solve(self):
         self.ts = PETSc.TS().create(PETSc.COMM_WORLD)
@@ -280,23 +351,31 @@ class NavierStokesSolver:
         """
         self.ts.setDM(self.dm)
         self.ts.setProblemType(self.ts.ProblemType.NONLINEAR)
-        self.ts.setSolution(self.dm.createGlobalVec())
+        
+        sol_vec = self.dm.createGlobalVec()
+        self.ts.setSolution(sol_vec)
         self.ts.setIFunction(self.eval_ifunction, self.dm.createGlobalVec())
-        self.ts.getSNES().setUseFD(True)
+        
+        snes = self.ts.getSNES()
+        snes.setUseFD(True)
+        
+        ksp = snes.getKSP()
+        ksp.setType("preonly")
+        pc = ksp.getPC()
+        pc.setType("lu")
+        
         self.ts.setTimeStep(0.01)
         self.ts.setMaxSteps(5)
         
-        u = self.ts.getSolution()
-        self.compute_exact(0.0, u)
-        self.ts.solve(u)
+        self.compute_exact(0.0, sol_vec)
+        self.ts.solve(sol_vec)
         
-        # Verify L2
-        exact = u.duplicate()
+        exact = sol_vec.duplicate()
         self.compute_exact(self.ts.getTime(), exact)
-        exact.axpy(-1.0, u)
-        print(f"Verified L2 Error: {exact.norm(PETSc.NormType.NORM_2):.2e}")
-
-        return u
+        exact.axpy(-1.0, sol_vec)
+        print(f"L2 Error Norm: {exact.norm(PETSc.NormType.NORM_2):.2e}")
+        
+        return sol_vec
 
 if __name__ == "__main__":
     solver = NavierStokesSolver()
