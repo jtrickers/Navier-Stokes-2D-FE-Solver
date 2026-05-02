@@ -180,19 +180,40 @@ class NavierStokesSolver:
         This robustly handles Q1 coordinates by averaging vertices for edge midpoints.
         """
         try:
-            off = coord_sec.getOffset(pt)
-            dof = coord_sec.getDof(pt)
+            # 1. Safely check if the point has direct coordinates (Vertices)
+            # We MUST check the section chart first. Calling getOffset() on an edge 
+            # or cell point that isn't in the coordinate section chart throws a fatal 
+            # exception, skipping the rest of the function!
+            pStart, pEnd = coord_sec.getChart()
             
-            if dof > 0 and off >= 0 and off + 1 < len(coords_array):
-                return coords_array[off], coords_array[off+1]
+            if pStart <= pt < pEnd:
+                off = coord_sec.getOffset(pt)
+                dof = coord_sec.getDof(pt)
+                if dof > 0 and off >= 0 and off + 1 < len(coords_array):
+                    return float(coords_array[off]), float(coords_array[off+1])
             
-            closure, _ = self.dm.getTransitiveClosure(pt)
+            # 2. If it's an edge or cell, calculate its geometric center
+            # petsc4py's getTransitiveClosure returns a 1D numpy array: 
+            # [Point_ID, Orientation, Point_ID, Orientation...]
+            closure_data = self.dm.getTransitiveClosure(pt)
+            
+            # Handle potential petsc4py version differences (array vs tuple)
+            if isinstance(closure_data, tuple):
+                closure_data = closure_data[0]
+                
+            # Slice with [::2] to ONLY iterate over the Point IDs.
+            closure_pts = closure_data[::2] 
+            
             v_coords = []
-            for c_pt in closure:
-                c_off = coord_sec.getOffset(c_pt)
-                c_dof = coord_sec.getDof(c_pt)
-                if c_dof > 0 and c_off >= 0 and c_off + 1 < len(coords_array):
-                    v_coords.append([coords_array[c_off], coords_array[c_off+1]])
+            for c_pt in closure_pts:
+                c_pt_int = int(c_pt) # Cast numpy int to python int for safety
+                
+                # Safely check chart bounds before querying the section
+                if pStart <= c_pt_int < pEnd:
+                    c_off = coord_sec.getOffset(c_pt_int)
+                    c_dof = coord_sec.getDof(c_pt_int)
+                    if c_dof > 0 and c_off >= 0 and c_off + 1 < len(coords_array):
+                        v_coords.append([coords_array[c_off], coords_array[c_off+1]])
             
             if v_coords:
                 mean_coords = np.mean(v_coords, axis=0)
@@ -200,7 +221,6 @@ class NavierStokesSolver:
         except Exception:
             pass
             
-        # Return None instead of (0.0, 0.0) to prevent false clustering at the origin
         return None, None
 
     def eval_ifunction(self, ts, t, U, U_t, F):
@@ -216,21 +236,29 @@ class NavierStokesSolver:
         pStart, pEnd = self.dm.getChart()
         for pt in range(pStart, pEnd):
             try:
-                dof = section.getDof(pt)
-                off = section.getOffset(pt)
-                
-                if dof <= 0 or off < 0: 
-                    continue
-                
                 x, y = self._get_true_coords(pt, coord_sec, coords_arr)
-                if x is None:  # Skip points that couldn't be mapped
+                if x is None:  
                     continue
-
-                if dof >= 2 and off + 1 < len(f_glob) and off + 1 < len(u_glob):
-                    f_glob[off]   = u_glob[off]   - self.exact_u(t, x, y)
-                    f_glob[off+1] = u_glob[off+1] - self.exact_v(t, x, y)
-                if dof == 3 and off + 2 < len(f_glob) and off + 2 < len(u_glob):
-                    f_glob[off+2] = u_glob[off+2] - self.exact_p(t, x, y)
+                
+                # Safely request exact memory offsets AND Degree of Freedom (DOF) counts
+                u_off = section.getFieldOffset(pt, 0)
+                u_dof = section.getFieldDof(pt, 0)
+                
+                p_off = section.getFieldOffset(pt, 1)
+                p_dof = section.getFieldDof(pt, 1)
+                
+                # --- MEMORY CORRUPTION FIX ---
+                # We MUST check that `dof >= 1`. If a point has 0 DOFs for a field, 
+                # PETSc may still return an offset pointing into another field's memory!
+                
+                # Apply Velocity constraints
+                if u_dof >= 2 and u_off >= 0 and u_off + 1 < len(f_glob):
+                    f_glob[u_off]   = u_glob[u_off]   - self.exact_u(t, x, y)
+                    f_glob[u_off+1] = u_glob[u_off+1] - self.exact_v(t, x, y)
+                    
+                # Apply Pressure constraints
+                if p_dof >= 1 and p_off >= 0 and p_off < len(f_glob):
+                    f_glob[p_off]   = u_glob[p_off]   - self.exact_p(t, x, y)
             except Exception:
                 continue
 
@@ -244,67 +272,77 @@ class NavierStokesSolver:
         pStart, pEnd = self.dm.getChart()
         for pt in range(pStart, pEnd):
             try:
-                dof = section.getDof(pt)
-                off = section.getOffset(pt)
-                
-                if dof <= 0 or off < 0: 
-                    continue
-                
                 x, y = self._get_true_coords(pt, coord_sec, coords_arr)
-                if x is None:  # Skip points that couldn't be mapped
+                if x is None:  
                     continue
-
-                if dof >= 2 and off + 1 < len(u_arr):
-                    u_arr[off]   = self.exact_u(t, x, y)
-                    u_arr[off+1] = self.exact_v(t, x, y)
-                if dof == 3 and off + 2 < len(u_arr):
-                    u_arr[off+2] = self.exact_p(t, x, y)
+                
+                u_off = section.getFieldOffset(pt, 0)
+                u_dof = section.getFieldDof(pt, 0)
+                
+                p_off = section.getFieldOffset(pt, 1)
+                p_dof = section.getFieldDof(pt, 1)
+                
+                # --- MEMORY CORRUPTION FIX ---
+                # Guarantee we only write exact polynomials to validly allocated DOFs
+                
+                if u_dof >= 2 and u_off >= 0 and u_off + 1 < len(u_arr):
+                    u_arr[u_off]   = self.exact_u(t, x, y)
+                    u_arr[u_off+1] = self.exact_v(t, x, y)
+                    
+                if p_dof >= 1 and p_off >= 0 and p_off < len(u_arr):
+                    u_arr[p_off]   = self.exact_p(t, x, y)
             except Exception:
                 continue
 
     def extract_velocity_field(self, solution_vec):
         """
         Safely extracts the coordinates and velocity components for plotting.
-        Uses PETSc's explicit Global-to-Local mapping to guarantee memory alignment
-        and eliminate visual artifacting/scattering.
+        Uses PETSc's explicit Global-to-Local mapping and explicit field offsets.
         """
-        # 1. Properly map the Global solution into the Local topological space
         local_sol = self.dm.getLocalVec()
         self.dm.globalToLocal(solution_vec, local_sol)
         u_array = local_sol.getArray(readonly=True)
         
-        # 2. Crucially, use the LOCAL section to read the local array
         local_sec = self.dm.getLocalSection()
         coord_sec = self.dm.getCoordinateSection()
         coords_arr = self.dm.getCoordinatesLocal().getArray(readonly=True)
         
         x_vals, y_vals, u_vel, v_vel = [], [], [], []
+        seen_coords = set() # Track unique geometric coordinates to prevent plotting overlap
         
         pStart, pEnd = self.dm.getChart()
         for pt in range(pStart, pEnd):
             try:
-                dof = local_sec.getDof(pt)
-                off = local_sec.getOffset(pt)
+                # Explicitly only pull indices belonging to Field 0 (Velocity)
+                u_off = local_sec.getFieldOffset(pt, 0)
+                u_dof = local_sec.getFieldDof(pt, 0)
                 
-                if dof < 2 or off < 0: 
+                # Check that the offset is valid AND the point actually has velocity DOFs
+                if u_off < 0 or u_dof < 2 or u_off + 1 >= len(u_array): 
                     continue
                     
                 x, y = self._get_true_coords(pt, coord_sec, coords_arr)
-                if x is None:  # Skip points that couldn't be mapped
+                if x is None:  
                     continue
+
+                # Round coordinates to 5 decimal places to perfectly capture 
+                # base-2 mesh fractions (like 1/64 = 0.015625) without uneven snapping
+                coord_key = (round(x, 5), round(y, 5))
+                if coord_key in seen_coords:
+                    continue
+                    
+                seen_coords.add(coord_key)
                 
-                # Ultimate bounds check to verify memory pointer validity before access
-                if off + 1 < len(u_array):
-                    x_vals.append(x)
-                    y_vals.append(y)
-                    u_vel.append(u_array[off])
-                    v_vel.append(u_array[off+1])
+                # Memory alignments are now perfectly safe, so we can plot every 
+                # valid Q2 topological coordinate exactly as it evaluates
+                x_vals.append(x)
+                y_vals.append(y)
+                u_vel.append(u_array[u_off])
+                v_vel.append(u_array[u_off+1])
                     
             except Exception:
-                # Catch ANY unexpected failures from corrupted PETSc memory
                 continue
                 
-        # Clean up local memory wrapper
         self.dm.restoreLocalVec(local_sol)
         
         return x_vals, y_vals, u_vel, v_vel
