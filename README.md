@@ -23,11 +23,9 @@ Through several attempts, a functioning Python script was not able to be generat
 
 ## Repository Structure
 
-`tutorial_module.py`: The core Python module containing the NavierStokesSolver class. It manages the mesh generation, discretization, and global physics assembly.
+`tutorial_module.py`: The core Python module containing the NavierStokesSolver class. It manages the mesh generation, discretization, and global physics assembly. This file containes docstrings describing source code archaeology for three essential `petsc4py` functions used in `tutorial_module.py`. It explains the discrepancies between C and Python functions.
 
-`docs/`: The folder of markdown files detailing the source code archaeology for three essential `petsc4py` functions used in `tutorial_module.py`. It explains the discrepancies between C and Python functions.
-
-`tutorial_presentation.ipynb`: A Jupyter Notebook demonstrating how to import the solver, run the simulation, and visualize the resulting velocity vector fields using Matplotlib.
+`ex/`: The folder of example files detailing the workings of the simulation code using several example solutions with plotting. Inside this directory, `tutorial_presentation_?.ipynb` is the naming convention for Jupyter Notebooks demonstrating how to import the solver, run the simulation, and visualize the resulting velocity vector fields using Matplotlib for various solution cases. Also in this directory are saved plots from each example as appropriately named `.png` files.
 
 ## Prerequisites & Installation
 
