@@ -51,9 +51,9 @@ To visualize the velocity field:
 
 ## Example Output
 
-Below is an example plot resulting from running the code in a Jupyter notebook:
+This project contains several example notebooks through which to try the Python script. These files can be found in the `/ex` directory of this project. Below is an example plot resulting from running the code in a Jupyter notebook to simulate flow for an 8x8 mesh:
 
-![example plot](example.png)
+![example plot](example_8x8.png)
 
 ## Documentation Notes
 
