@@ -5,7 +5,7 @@ This repository contains the final project for MA 402. The objective of this pro
 ### From original code:
 
 "Time dependent Navier-Stokes problem in 2d and 3d with finite elements. We solve the Navier-Stokes in a rectangular domain, using a parallel unstructured mesh (DMPLEX) to discretize it. This example supports discretized auxiliary fields (Re) as well as multilevel nonlinear solvers."
-
+v
 The time-dependent incompressible Navier-Stokes equations can be written as:
 
 $\begin{aligned}
@@ -13,7 +13,7 @@ $\begin{aligned}
 \nabla \cdot u &= 0
 \end{aligned}$
 
-The velocities in this model are unsteady and push out from the origin. One of the default terms in the velocity creates a shearing flow designed to warp and twist the flow. The pressure is modeled as a linear distribution ramped up across the mesh. By default, the pressure gradient is what forces the simulated fluid across the mesh.
+Unless conditions are changed like in some of the examples for this project, the velocities in this model are unsteady and push out from the origin. One of the default terms in the velocity creates a shearing flow designed to warp and twist the flow. The pressure is modeled as a linear distribution ramped up across the mesh. By default, the pressure gradient is what forces the simulated fluid across the mesh.
 
 ## Notes on AI Translation
 
